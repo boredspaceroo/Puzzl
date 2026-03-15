@@ -1,0 +1,1429 @@
+<!DOCTYPE html>
+
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>LEXARC — Word Puzzle</title>
+<style>
+/* ============================================================
+   LEXARC ARCADE CROSSWORD
+   Aesthetic: Neon arcade on deep space background
+   Fonts: Orbitron (display), Rajdhani (body)
+   Color system: deep navy base, neon cyan/magenta/gold accents
+   ============================================================ */
+
+@import url(‘https://fonts.googleapis.com/css2?family=Orbitron:wght@700;900&family=Rajdhani:wght@500;700&display=swap’);
+
+/* — CSS Variables — */
+:root {
+–bg:        #080b1a;
+–bg2:       #0d1230;
+–cell-bg:   #111830;
+–cell-bd:   #1e2d5a;
+–neon-cyan: #00f5ff;
+–neon-pink: #ff2d78;
+–neon-gold: #ffd700;
+–neon-grn:  #39ff14;
+–neon-pur:  #bf5fff;
+–text:      #e8f0ff;
+–dimtext:   #5a6a9a;
+–correct:   #39ff14;
+–wrong:     #ff2d78;
+–selected:  #00f5ff;
+–cell-size: clamp(38px, 10vw, 52px);
+–gap:       3px;
+–radius:    6px;
+}
+
+/* — Reset & Base — */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html, body {
+height: 100%; width: 100%;
+overflow: hidden;
+background: var(–bg);
+color: var(–text);
+font-family: ‘Rajdhani’, sans-serif;
+font-weight: 500;
+user-select: none;
+-webkit-user-select: none;
+-webkit-tap-highlight-color: transparent;
+}
+
+/* ============================================================
+STARFIELD BACKGROUND
+Layered CSS animation for living background
+============================================================ */
+.stars {
+position: fixed; inset: 0; z-index: 0; overflow: hidden;
+pointer-events: none;
+}
+.stars span {
+position: absolute;
+border-radius: 50%;
+background: white;
+animation: twinkle var(–dur) ease-in-out infinite alternate;
+opacity: 0;
+}
+@keyframes twinkle {
+0%   { opacity: 0;    transform: scale(0.5); }
+100% { opacity: 0.8;  transform: scale(1.2); }
+}
+
+/* ============================================================
+INTRO SCREEN
+Full-screen splash that animates in then waits for tap
+============================================================ */
+#intro {
+position: fixed; inset: 0; z-index: 100;
+display: flex; flex-direction: column;
+align-items: center; justify-content: center;
+background: radial-gradient(ellipse at 50% 40%, #0a1540 0%, #080b1a 70%);
+transition: opacity 0.6s, visibility 0.6s;
+}
+#intro.hidden { opacity: 0; visibility: hidden; pointer-events: none; }
+
+.intro-logo {
+font-family: ‘Orbitron’, sans-serif;
+font-size: clamp(2.8rem, 12vw, 5rem);
+font-weight: 900;
+letter-spacing: 0.15em;
+background: linear-gradient(135deg, var(–neon-cyan), var(–neon-pink));
+-webkit-background-clip: text;
+-webkit-text-fill-color: transparent;
+background-clip: text;
+filter: drop-shadow(0 0 20px rgba(0,245,255,0.6));
+animation: logoPulse 2.5s ease-in-out infinite alternate;
+margin-bottom: 0.2em;
+}
+.intro-sub {
+font-family: ‘Orbitron’, sans-serif;
+font-size: clamp(0.65rem, 3vw, 0.9rem);
+letter-spacing: 0.35em;
+color: var(–neon-gold);
+text-transform: uppercase;
+margin-bottom: 3rem;
+opacity: 0.85;
+}
+@keyframes logoPulse {
+from { filter: drop-shadow(0 0 15px rgba(0,245,255,0.4)); }
+to   { filter: drop-shadow(0 0 35px rgba(0,245,255,0.9)); }
+}
+
+/* Placeholder: character sprite container (Stage 2) */
+.sprite-intro {
+width: 100px; height: 120px;
+/* background: url(‘character_idle.png’) center/contain no-repeat; */
+margin-bottom: 1.5rem;
+position: relative;
+}
+/* Placeholder sprite drawn with CSS for now */
+.sprite-intro::before {
+content: ‘🤖’;
+font-size: 4.5rem;
+position: absolute; top: 50%; left: 50%;
+transform: translate(-50%, -50%);
+animation: spriteFloat 2s ease-in-out infinite alternate;
+filter: drop-shadow(0 0 12px var(–neon-cyan));
+}
+@keyframes spriteFloat {
+from { transform: translate(-50%, -50%) translateY(0); }
+to   { transform: translate(-50%, -50%) translateY(-8px); }
+}
+
+.tap-btn {
+font-family: ‘Orbitron’, sans-serif;
+font-size: clamp(0.8rem, 3.5vw, 1rem);
+letter-spacing: 0.2em;
+color: var(–bg);
+background: linear-gradient(90deg, var(–neon-cyan), var(–neon-pur));
+border: none; border-radius: 40px;
+padding: 14px 40px;
+cursor: pointer;
+animation: tapPulse 1.2s ease-in-out infinite alternate;
+box-shadow: 0 0 25px rgba(0,245,255,0.5);
+font-weight: 700;
+}
+@keyframes tapPulse {
+from { box-shadow: 0 0 20px rgba(0,245,255,0.4); transform: scale(1); }
+to   { box-shadow: 0 0 40px rgba(0,245,255,0.9); transform: scale(1.04); }
+}
+
+.stage-badge {
+position: absolute; top: 20px; right: 20px;
+font-family: ‘Orbitron’, sans-serif;
+font-size: 0.65rem; letter-spacing: 0.2em;
+color: var(–neon-gold); opacity: 0.7;
+}
+
+/* ============================================================
+MAIN GAME LAYOUT
+Flex column: header → puzzle → clue → keyboard
+============================================================ */
+#game {
+position: fixed; inset: 0; z-index: 10;
+display: flex; flex-direction: column;
+align-items: center;
+padding: env(safe-area-inset-top, 0) 0 env(safe-area-inset-bottom, 0);
+overflow: hidden;
+}
+
+/* — Header Bar — */
+.hdr {
+width: 100%; display: flex;
+align-items: center; justify-content: space-between;
+padding: 8px 16px 4px;
+background: linear-gradient(180deg, rgba(13,18,48,0.9) 0%, transparent 100%);
+flex-shrink: 0;
+}
+.hdr-logo {
+font-family: ‘Orbitron’, sans-serif;
+font-size: clamp(1rem, 4vw, 1.3rem);
+font-weight: 900;
+background: linear-gradient(90deg, var(–neon-cyan), var(–neon-pink));
+-webkit-background-clip: text;
+-webkit-text-fill-color: transparent;
+background-clip: text;
+letter-spacing: 0.12em;
+}
+.hdr-score {
+font-family: ‘Orbitron’, sans-serif;
+font-size: clamp(0.7rem, 3vw, 0.9rem);
+color: var(–neon-gold);
+letter-spacing: 0.1em;
+}
+.score-val {
+font-size: clamp(1rem, 4vw, 1.3rem);
+color: var(–neon-gold);
+font-weight: 900;
+text-shadow: 0 0 10px var(–neon-gold);
+}
+
+/* — Clue / Word Selector — */
+.clue-bar {
+width: 100%; max-width: 420px;
+padding: 6px 12px;
+display: flex; gap: 6px;
+flex-wrap: wrap; justify-content: center;
+flex-shrink: 0;
+}
+.word-btn {
+font-family: ‘Rajdhani’, sans-serif;
+font-weight: 700;
+font-size: clamp(0.7rem, 3vw, 0.85rem);
+letter-spacing: 0.08em;
+padding: 6px 12px;
+border-radius: 20px;
+border: 1.5px solid var(–cell-bd);
+background: var(–cell-bg);
+color: var(–dimtext);
+cursor: pointer;
+transition: all 0.2s;
+text-transform: uppercase;
+}
+.word-btn.active {
+border-color: var(–neon-cyan);
+color: var(–neon-cyan);
+background: rgba(0,245,255,0.1);
+box-shadow: 0 0 12px rgba(0,245,255,0.3);
+}
+.word-btn.solved {
+border-color: var(–neon-grn);
+color: var(–neon-grn);
+background: rgba(57,255,20,0.08);
+}
+.word-btn.solved::after { content: ’ ✓’; }
+.clue-text {
+width: 100%; text-align: center;
+font-size: clamp(0.72rem, 3vw, 0.88rem);
+color: var(–neon-gold);
+letter-spacing: 0.06em;
+min-height: 1.4em;
+padding: 0 8px;
+}
+
+/* ============================================================
+PUZZLE GRID
+CSS Grid — dynamic size based on word layout
+============================================================ */
+.puzzle-wrap {
+flex: 1; display: flex;
+align-items: center; justify-content: center;
+overflow: hidden;
+padding: 4px;
+}
+.puzzle-grid {
+display: grid;
+gap: var(–gap);
+/* cols/rows set by JS */
+}
+
+/* Individual cell */
+.cell {
+width: var(–cell-size);
+height: var(–cell-size);
+border-radius: var(–radius);
+background: var(–cell-bg);
+border: 1.5px solid var(–cell-bd);
+display: flex; align-items: center; justify-content: center;
+font-family: ‘Orbitron’, sans-serif;
+font-size: clamp(1rem, 4.5vw, 1.4rem);
+font-weight: 700;
+color: var(–text);
+position: relative;
+transition: background 0.15s, border-color 0.15s;
+cursor: pointer;
+}
+.cell.empty { background: transparent; border-color: transparent; }
+.cell.active-word {
+border-color: rgba(0,245,255,0.5);
+background: rgba(0,245,255,0.07);
+}
+.cell.active-cursor {
+border-color: var(–neon-cyan);
+background: rgba(0,245,255,0.15);
+box-shadow: 0 0 12px rgba(0,245,255,0.4), inset 0 0 8px rgba(0,245,255,0.1);
+}
+.cell.glow-correct {
+animation: glowCorrect 0.7s ease-out forwards;
+}
+.cell.glow-wrong {
+animation: glowWrong 0.5s ease-out forwards;
+}
+.cell.solved-cell {
+border-color: rgba(57,255,20,0.4);
+background: rgba(57,255,20,0.08);
+color: var(–neon-grn);
+}
+/* Wrong letter shown in red */
+.cell.wrong-letter { color: var(–neon-pink); }
+
+/* Cell number label (top-left) */
+.cell-num {
+position: absolute; top: 2px; left: 3px;
+font-family: ‘Rajdhani’, sans-serif;
+font-size: clamp(0.45rem, 1.5vw, 0.6rem);
+color: var(–dimtext);
+line-height: 1;
+}
+
+@keyframes glowCorrect {
+0%   { background: rgba(57,255,20,0.6); border-color: var(–neon-grn);
+box-shadow: 0 0 20px rgba(57,255,20,0.8); color: var(–bg); }
+60%  { background: rgba(57,255,20,0.2); border-color: var(–neon-grn);
+box-shadow: 0 0 30px rgba(57,255,20,0.5); }
+100% { background: rgba(57,255,20,0.08); border-color: rgba(57,255,20,0.4); color: var(–neon-grn); }
+}
+@keyframes glowWrong {
+0%   { background: rgba(255,45,120,0.5); border-color: var(–neon-pink);
+box-shadow: 0 0 15px rgba(255,45,120,0.7); }
+100% { background: var(–cell-bg); border-color: var(–cell-bd); }
+}
+
+/* ============================================================
+SPARKLE PARTICLES
+Injected via JS on correct answer
+============================================================ */
+.sparkle {
+position: fixed;
+pointer-events: none;
+z-index: 200;
+border-radius: 50%;
+animation: sparkleAnim var(–spk-dur) ease-out forwards;
+}
+@keyframes sparkleAnim {
+0%   { opacity: 1; transform: translate(0,0) scale(1); }
+100% { opacity: 0; transform: translate(var(–spk-dx), var(–spk-dy)) scale(0.2); }
+}
+
+/* ============================================================
+LETTER KEYBOARD (replaces phone keyboard)
+Large tap targets — the ONLY input method
+============================================================ */
+.keyboard-wrap {
+width: 100%; max-width: 480px;
+padding: 6px 8px 10px;
+flex-shrink: 0;
+/* Placeholder area for character sprite reaction (Stage 2) */
+}
+
+/* Sprite reaction area (Stage 2 hook) */
+.sprite-game {
+display: flex; justify-content: flex-end;
+padding: 0 8px 4px;
+height: 44px; /* reserve space */
+pointer-events: none;
+/* background: url(‘character_idle.png’) right bottom/contain no-repeat; */
+}
+.sprite-game::after {
+content: ‘’; /* Stage 2: swap to character sprite */
+}
+
+.key-row {
+display: flex; justify-content: center;
+gap: 4px; margin-bottom: 4px;
+}
+.key {
+flex: 0 0 auto;
+width: clamp(28px, 8.5vw, 40px);
+height: clamp(34px, 10vw, 46px);
+border-radius: 8px;
+border: 1.5px solid var(–cell-bd);
+background: linear-gradient(180deg, #1a2450 0%, #0e1535 100%);
+color: var(–text);
+font-family: ‘Orbitron’, sans-serif;
+font-weight: 700;
+font-size: clamp(0.7rem, 3vw, 0.95rem);
+display: flex; align-items: center; justify-content: center;
+cursor: pointer;
+transition: all 0.1s;
+box-shadow: 0 3px 0 rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.05);
+position: relative;
+overflow: hidden;
+}
+.key::after {
+content: ‘’;
+position: absolute; inset: 0;
+background: linear-gradient(180deg, rgba(255,255,255,0.06) 0%, transparent 50%);
+border-radius: 7px;
+}
+.key:active {
+transform: translateY(2px);
+box-shadow: 0 1px 0 rgba(0,0,0,0.5);
+}
+/* Backspace key - wider, distinct color */
+.key-back {
+flex: 0 0 auto;
+width: clamp(44px, 12vw, 60px);
+height: clamp(34px, 10vw, 46px);
+border-radius: 8px;
+border: 1.5px solid #3a1540;
+background: linear-gradient(180deg, #2a0e30 0%, #1a0820 100%);
+color: var(–neon-pink);
+font-family: ‘Rajdhani’, sans-serif;
+font-weight: 700;
+font-size: clamp(0.8rem, 3vw, 1rem);
+display: flex; align-items: center; justify-content: center;
+cursor: pointer;
+transition: all 0.1s;
+box-shadow: 0 3px 0 rgba(0,0,0,0.5);
+}
+.key-back:active { transform: translateY(2px); box-shadow: 0 1px 0 rgba(0,0,0,0.5); }
+
+/* Victory overlay */
+#victory {
+position: fixed; inset: 0; z-index: 150;
+display: flex; flex-direction: column;
+align-items: center; justify-content: center;
+background: rgba(8,11,26,0.92);
+backdrop-filter: blur(8px);
+opacity: 0; visibility: hidden;
+transition: opacity 0.5s, visibility 0.5s;
+}
+#victory.show { opacity: 1; visibility: visible; }
+.victory-title {
+font-family: ‘Orbitron’, sans-serif;
+font-size: clamp(2rem, 10vw, 3.5rem);
+font-weight: 900;
+background: linear-gradient(90deg, var(–neon-gold), var(–neon-pink), var(–neon-cyan));
+-webkit-background-clip: text;
+-webkit-text-fill-color: transparent;
+background-clip: text;
+text-align: center;
+animation: victoryShake 0.5s ease-out;
+margin-bottom: 0.5em;
+}
+.victory-score {
+font-family: ‘Orbitron’, sans-serif;
+font-size: clamp(1.2rem, 5vw, 1.8rem);
+color: var(–neon-gold);
+text-shadow: 0 0 20px var(–neon-gold);
+margin-bottom: 2rem;
+}
+@keyframes victoryShake {
+0%,100% { transform: translateX(0); }
+25%      { transform: translateX(-8px); }
+75%      { transform: translateX(8px); }
+}
+.play-again {
+font-family: ‘Orbitron’, sans-serif;
+font-size: clamp(0.8rem, 3vw, 1rem);
+letter-spacing: 0.15em;
+color: var(–bg);
+background: linear-gradient(90deg, var(–neon-gold), var(–neon-pink));
+border: none; border-radius: 40px;
+padding: 14px 40px;
+cursor: pointer;
+font-weight: 700;
+box-shadow: 0 0 25px rgba(255,215,0,0.5);
+}
+
+/* Scan-line overlay for CRT feel */
+.scanlines {
+position: fixed; inset: 0; z-index: 5;
+background: repeating-linear-gradient(
+0deg,
+transparent,
+transparent 2px,
+rgba(0,0,0,0.03) 2px,
+rgba(0,0,0,0.03) 4px
+);
+pointer-events: none;
+}
+/* Vignette */
+.vignette {
+position: fixed; inset: 0; z-index: 4;
+background: radial-gradient(ellipse at 50% 50%, transparent 60%, rgba(0,0,0,0.6) 100%);
+pointer-events: none;
+}
+</style>
+
+</head>
+<body>
+
+<!-- ======================================================
+     ATMOSPHERIC LAYERS
+     ====================================================== -->
+
+<div class="stars" id="stars"></div>
+<div class="vignette"></div>
+<div class="scanlines"></div>
+
+<!-- ======================================================
+     INTRO SCREEN
+     Stage 2: Replace sprite-intro content with character PNG
+     ====================================================== -->
+
+<div id="intro">
+  <div class="stage-badge">STAGE 1</div>
+
+  <!-- Stage 2: swap this emoji placeholder with <img src="character_excited.png"> -->
+
+  <div class="sprite-intro"></div>
+
+  <div class="intro-logo">LEXARC</div>
+  <div class="intro-sub">Arcade Word Puzzle</div>
+  <button class="tap-btn" id="startBtn" onclick="startGame()">TAP TO PLAY</button>
+</div>
+
+<!-- ======================================================
+     MAIN GAME
+     ====================================================== -->
+
+<div id="game">
+
+  <!-- Header -->
+
+  <div class="hdr">
+    <div class="hdr-logo">LEXARC</div>
+    <div class="hdr-score">
+      SCORE <span class="score-val" id="scoreDisp">0</span>
+    </div>
+  </div>
+
+  <!-- Word selector clue bar -->
+
+  <div class="clue-bar" id="clueBar">
+    <!-- Word buttons injected by JS -->
+    <div class="clue-text" id="clueText">Select a word to begin</div>
+  </div>
+
+  <!-- Puzzle grid -->
+
+  <div class="puzzle-wrap">
+    <div class="puzzle-grid" id="grid"></div>
+  </div>
+
+  <!-- Stage 2 sprite reaction zone -->
+
+  <div class="keyboard-wrap">
+    <div class="sprite-game" id="spriteGame">
+      <!-- Stage 2: character sprite reacts here (idle, thinking, excited, etc.) -->
+      <!-- <img id="sprite" src="character_idle.png" alt=""> -->
+    </div>
+    <div id="keyboard"></div>
+  </div>
+
+</div>
+
+<!-- Victory Screen -->
+
+<div id="victory">
+  <div class="victory-title">PUZZLE<br>COMPLETE!</div>
+  <div class="victory-score">SCORE: <span id="finalScore">0</span></div>
+  <button class="play-again" onclick="resetGame()">PLAY AGAIN</button>
+</div>
+
+<!-- ======================================================
+     AUDIO ENGINE
+     Stage 2: Background music src placeholders below
+     Sound effects generated via Web Audio API (no files needed)
+     ====================================================== -->
+
+<audio id="bgMusic" loop preload="none">
+  <!-- Stage 2: Add your music file here -->
+  <!-- <source src="stage1_music.ogg" type="audio/ogg"> -->
+  <!-- <source src="stage1_music.mp3" type="audio/mpeg"> -->
+</audio>
+
+<script>
+/* ============================================================
+   LEXARC — ARCADE CROSSWORD ENGINE
+   Architecture:
+     WORDS[]      → puzzle definition (word, direction, row, col)
+     GRID[][]     → 2D array of cell state
+     STATE        → active word, cursor position, score, solved set
+     renderGrid() → builds DOM from GRID
+     renderKeys() → builds alphabet keyboard
+     onKey(letter) → core input handler
+     sparkle()    → particle burst
+     sfx.*()      → Web Audio sound effects
+   ============================================================ */
+
+/* -------------------------------------------------------
+   PUZZLE DEFINITION
+   Crossword layout (7 cols × 7 rows, 0-indexed):
+
+   Grid map (. = empty, letter = cell):
+
+        0    1    2    3    4    5    6
+   0  [ .    B    L    A    Z    E    .  ]   BLAZE H
+   1  [ .    .    .    .    .    .    .  ]
+   2  [ .    B    R    A    V    E    .  ]   BRAVE H
+   3  [ .    A    .    .    .    .    .  ]
+   4  [ F    L    A    M    E    .    .  ]   FLAME H
+   5  [ .    A    .    .    .    .    .  ]
+   6  [ .    N    I    G    H    T    .  ]   NIGHT H
+
+   Verticals:
+   BLANK: col1 rows 0-4 → B(0,1) L(1,1)? — wait:
+     col1: B(0,1) . B(2,1) A(3,1) L(4,1) A(5,1) N(6,1) — too long
+
+   Let me redo with a verified grid:
+
+   Words:
+     H1: FLAME  row2, cols0-4
+     H2: NIGHT  row5, cols2-6
+     H3: BRAVE  row0, cols2-6
+
+   Verticals intersecting:
+     V1: FANGS  col0, rows2-6 — F(2,0) from FLAME✓
+          F(2,0) A(3,0) N(4,0) G(5,0) S(6,0) — NIGHT(5,2)=I not col0
+     V2: col4, rows0-4 — E(0,4) from BRAVE(0,4)? BRAVE r0,c2-6: B(0,2)R(0,3)A(0,4)V(0,5)E(0,6)
+          col4, rows0-4: A(0,4)=BRAVE's A✓, ?(1,4) ?(2,4)=FLAME's M? FLAME r2,c0-4: F(2,0)L(2,1)A(2,2)M(2,3)E(2,4) → E at (2,4)
+          Word with A_E pattern, col4 rows0-2: A_E → ACE! or AGE or ATE...
+          ARISE: A(0,4) R(1,4) I(2,4)? but (2,4)=E from FLAME. No.
+          Let me find word with A at pos0, E at pos2: ACE(3 letters), col4 rows0-2: A(0,4)C(1,4)E(2,4)=FLAME's E✓. ACE works but short.
+
+   Going with a clean verified layout — I'll compute it properly:
+   ------------------------------------------------------- */
+
+/* FINAL VERIFIED CROSSWORD LAYOUT
+   Rows 0-6, Cols 0-6
+
+   Horizontal words:
+     STORM: row1, cols0-4  → S(1,0) T(1,1) O(1,2) R(1,3) M(1,4)
+     BLAZE: row3, cols1-5  → B(3,1) L(3,2) A(3,3) Z(3,4) E(3,5)
+     NIGHT: row5, cols0-4  → N(5,0) I(5,1) G(5,2) H(5,3) T(5,4)
+
+   Vertical words:
+     SLAIN: col0, rows1-5  → S(1,0)✓ L(2,0) A(3,0)? but B(3,1)≠col0. (3,0)=A? BLAZE starts col1. So (3,0)=A only if we put it. → S(1,0)TORM L(2,0) A(3,0) I(4,0) N(5,0)✓NIGHT. SLAIN! ✓
+     ROBIN: col2, rows1-5  → O(1,2)✓STORM R(2,2) O(3,2)? BLAZE r3,c1-5: B(3,1)L(3,2)... L not O. ✗
+
+   Different approach:
+     STORM: row1, cols0-4
+     BLAND: row4, cols0-4 → B(4,0)L(4,1)A(4,2)N(4,3)D(4,4)
+     PRIZE: row2, cols2-6 → P(2,2)R(2,3)I(2,4)Z(2,5)E(2,6)
+
+   Verticals:
+     SABLE: col0, rows1-5 → S(1,0)✓STORM A(2,0) B(3,0) L(4,0)? BLAND(4,0)=B✓ E(5,0)? ...wait L(4,0)=BLAND's B? BLAND col0=B✓ match at (4,0) only if SABLE[3]=L but BLAND[0]=B. Contradiction.
+
+   I'll use a hand-verified grid approach and just define cell data directly.
+*/
+
+/* ============================================================
+   HAND-CRAFTED GRID — FINAL
+   7 columns × 7 rows
+
+     . S T O R M .
+     . . . R . . .
+     . . . I P . .   ← PRIZE starts col2
+     . . . Z . . .
+     B L A N D . .
+     . . . E . . .
+     . . . . . . .
+
+   Hmm that doesn't work cleanly either. Let me just define it precisely:
+
+   HORIZONTAL:
+     STORM  row0, col1-5: S(0,1)T(0,2)O(0,3)R(0,4)M(0,5)
+     BLAND  row3, col0-4: B(3,0)L(3,1)A(3,2)N(3,3)D(3,4)
+     FLESH  row6, col2-6: F(6,2)L(6,3)E(6,4)S(6,5)H(6,6)
+
+   VERTICAL:
+     TRIBE  col4, rows0-4: T(0,4)✓STORM R(1,4)I(2,4)B(3,4)? — BLAND(3,4)=D not B. ✗
+
+   HORIZONTAL:
+     STORM  row0, col0-4: S(0,0)T(0,1)O(0,2)R(0,3)M(0,4)
+     BLEND  row4, col1-5: B(4,1)L(4,2)E(4,3)N(4,4)D(4,5)
+     NIGHT  row7, col2-6: N(7,2)I(7,3)G(7,4)H(7,5)T(7,6)
+
+   VERTICAL:
+     OAKEN  col2, rows0-4: O(0,2)✓STORM A(1,2)K(2,2)E(3,2)N(4,2)? — BLEND(4,2)=L not N. ✗
+
+   OK I'm going to just build a KNOWN working puzzle and hardcode coordinates.
+   Classic crossword builder approach: start with intersection points.
+
+   Intersection plan:
+   1) FLAME and BRAVE share no letter... let me pick words that share letters.
+
+   PIANO and SPINE share I:
+     PIANO horizontal: P-I-A-N-O
+     SPINE vertical: S-P-I-N-E → I is at position 2 in SPINE, position 1 in PIANO
+     Place PIANO at row2, col0-4: P(2,0)I(2,1)A(2,2)N(2,3)O(2,4)
+     Place SPINE vertically: I at (2,1) = position 2 of SPINE → SPINE starts at row0,col1:
+       S(0,1)P(1,1)I(2,1)✓N(3,1)E(4,1)
+
+   GRAND and PIANO share A:
+     PIANO: A at (2,2)
+     GRAND vertical: G-R-A-N-D → A at position 2 → starts row0,col2: G(0,2)R(1,2)A(2,2)✓N(3,2)D(4,2)
+
+   Now I need a 3rd horizontal. At row4 we have E(4,1) from SPINE and D(4,2) from GRAND.
+   EDGY horizontal at row4, col1-4: E(4,1)✓D(4,2)✓G(4,3)Y(4,4) — only 4 letters, short but ok.
+   Or ELDER: E(4,1)D(4,2)... nope L next.
+
+   Let me try ENDOW at row4: E(4,1)N(4,2)? no D(4,2).
+   EDGED: E(4,1)D(4,2)G(4,3)E(4,4)D(4,5) — could work as 3rd H.
+
+   3 Vertical: ROBOT at col4, rows 0-4: R(0,4)O(1,4)B(2,4)? PIANO(2,4)=O not B. ✗
+
+   Let me try 3rd vertical at col3:
+   PIANO(2,3)=N. Need word with N at some position intersecting.
+   INNER: I-N-N-E-R → N at pos1 or pos2.
+   If N at pos2 (position 2 of INNER) → starts at row0,col3: I(0,3)N(1,3)N(2,3)✓E(3,3)R(4,3)
+
+   Now 3rd H at row4: E(4,1)from SPINE, D(4,2)from GRAND, R(4,3)from INNER.
+   E-D-R... EDROPS? No.
+   ↑ SPINE ends at (4,1)=E, GRAND ends at (4,2)=D, INNER ends at (4,3)=R.
+   Word starting at (4,1): E D R ... not a common word.
+
+   Retry 3rd H above. Row0: we have S(0,1)from SPINE, G(0,2)from GRAND, I(0,3)from INNER.
+   S-G-I... or start before col1.
+   Col0,row0: use it! 3rd horizontal at row0: ?-S-G-I-?
+   That's messy.
+
+   NEW CLEAN ATTEMPT with word list chosen for intersections:
+   ============================================================
+   WORDS (all share at least one letter with another):
+
+   H1: STORM  (S,T,O,R,M)
+   H2: GRAIN  (G,R,A,I,N)
+   H3: TYPED  (T,Y,P,E,D)
+   V1: SIGHT  (S,I,G,H,T)
+   V2: TRIPE  (T,R,I,P,E)
+   V3: MONAD  (M,O,N,A,D)
+
+   Intersections to find:
+   V1 SIGHT ∩ H1 STORM: S — pos0 of SIGHT, pos0 of STORM
+   V1 SIGHT ∩ H2 GRAIN: I — pos1 of SIGHT, pos2 of GRAIN  → 1 row down from S
+   V1 SIGHT ∩ H3 TYPED: G? T? → pos2 of SIGHT = G, pos0 of TYPED = T. No match.
+
+   Let me just pick: RIVER, PIANO, STORY, RIPEN, APART, NOTER and compute.
+   
+   Actually — I'll just use a known mini crossword solution. Final answer:
+
+   GRID 6×6 (rows 0-5, cols 0-5):
+   ┌─────────────────────────────┐
+   │ .  S  P  A  R  K  .  → SPARK row0, col1-5  (H1)
+   │ .  P  .  .  .  .  .
+   │ .  I  G  L  O  W  .  → IGLOW? no
+   
+   I give up trying to be perfect and just hard-code a WORKING layout I know is correct.
+*/
+
+/*  FINAL WORKING CROSSWORD — VERIFIED MANUALLY
+    ─────────────────────────────────────────────
+    8 cols × 7 rows (cols 0-7, rows 0-6)
+
+    HORIZONTAL:
+      SPARK : row 0, col 1-5  → S(0,1) P(0,2) A(0,3) R(0,4) K(0,5)
+      GLOBE : row 3, col 0-4  → G(3,0) L(3,1) O(3,2) B(3,3) E(3,4)
+      NIGHT : row 6, col 2-6  → N(6,2) I(6,3) G(6,4) H(6,5) T(6,6)
+
+    VERTICAL:
+      SPLOG : Not a word. Let me find real vertical words.
+
+    At col1: S(0,1) from SPARK, L(3,1) from GLOBE → rows 0 and 3, need word spanning 0-3 at col1.
+      4-letter word with S at pos0, L at pos3: SOUL, SELL, SLOB... SOUL: S-O-U-L → L at pos3! 
+      SOUL at col1, rows 0-3: S(0,1)✓ O(1,1) U(2,1) L(3,1)✓ GLOBE. 
+    
+    At col2: P(0,2) from SPARK, O(3,2) from GLOBE → 4-letter with P at 0, O at 3: POLO(P-O-L-O), PASO, PYRO, PESO.
+      POLO: P(0,2)O(1,2)L(2,2)O(3,2)✓. YES!
+    
+    At col4: R(0,4) from SPARK, E(3,4) from GLOBE, rows 0-3, R at pos0 E at pos3.
+      4-letter: R_E: ROBE? R-O-B-E → E at 3✓, R at 0✓. ROBE at col4, rows0-3: R(0,4)✓O(1,4)B(2,4)E(3,4)✓. YES!
+
+    Now NIGHT at row6 cols2-6: N(6,2)I(6,3)G(6,4)H(6,5)T(6,6)
+    Need to connect to grid. Col2 row0=P, row3=O, row6=N. POLO runs rows0-3 col2.
+    Extend col2 from row3 to row6: O(3,2) ?(4,2) ?(5,2) N(6,2).
+    O at pos0, N at pos3: OPEN! O-P-E-N at col2, rows3-6: O(3,2)✓ P(4,2)E(5,2)N(6,2)✓. 
+    But wait, POLO already placed O at (3,2). OPEN col2 rows3-6 also has O at (3,2). That's the same cell — OK if same letter. O=O ✓!
+
+    So full grid with all words:
+      H: SPARK r0 c1-5, GLOBE r3 c0-4, NIGHT r6 c2-6
+      V: SOUL c1 r0-3, POLO c2 r0-3, ROBE c4 r0-3, OPEN c2 r3-6
+
+    Wait that's 4 vertical + 3 horizontal = 7 words. I want 3V+3H.
+    POLO and OPEN share col2 but different rows. I can merge them into one vertical if they share a letter:
+    POLO ends at (3,2)=O, OPEN starts at (3,2)=O. They share the O! So col2 runs:
+    P(0,2)O(1,2)L(2,2)O(3,2)P(4,2)E(5,2)N(6,2) — that's POLOPEN, 7 cells, not a word.
+    
+    So I just use 3 vertical words that DON'T share a column:
+      V1: SOUL col1, rows0-3
+      V2: ROBE col4, rows0-3  
+      V3: Need something at col3 or col2 rows3-6 to connect GLOBE and NIGHT.
+      
+    GLOBE r3 c0-4 and NIGHT r6 c2-6. 
+    Col3: B(3,3) from GLOBE, I(6,3) from NIGHT. rows3-6, B at pos0, I at pos3.
+    B_I words (4 letters): BALI? BENI? BARI? Not common. 
+    Col3: Let's try BANI? No. BUOY? B-U-O-Y, Y≠I.
+    What about making GLOBE end differently? 
+    
+    G L O W S — GLOWS at r3, c0-4: G L O W S. Then col3=W, col4=S.
+    NIGHT r6, col2-6. col3=I(6,3). Need word col3, rows3-6: W at pos0, I at pos3: WIFI? W-I-F-I, I✓ pos3. WIFI! (slang but recognizable). Or WADI: W-A-D-I, I✓!  WADI col3, r3-6: W(3,3)A(4,3)D(5,3)I(6,3)✓. YES!
+    
+    And col2: O(3,2) from GLOWS. NIGHT r6, col2=N(6,2). O at pos0, N at pos3 (rows 3-6): OVEN! O-V-E-N.
+    OVEN col2, rows3-6: O(3,2)✓V(4,2)E(5,2)N(6,2)✓. PERFECT!
+
+    FINAL VERIFIED GRID (8 cols, 7 rows):
+    H1: SPARK  r0, c1-5
+    H2: GLOWS  r3, c0-4
+    H3: NIGHT  r6, c2-6
+    V1: SOUL   c1, r0-3  → S(0,1)✓ O(1,1) U(2,1) L(3,1)✓(GLOWS L)
+    V2: OVEN   c2, r3-6  → O(3,2)✓ V(4,2) E(5,2) N(6,2)✓(NIGHT N)
+    V3: WADI   c3, r3-6  → W(3,3)✓(GLOWS W) A(4,3) D(5,3) I(6,3)✓(NIGHT I)
+
+    Cross-check all intersections:
+    ✓ SPARK(0,1)=S = SOUL(0,1)=S
+    ✓ GLOWS(3,1)=L = SOUL(3,1)=L
+    ✓ GLOWS(3,2)=O = OVEN(3,2)=O
+    ✓ GLOWS(3,3)=W = WADI(3,3)=W
+    ✓ NIGHT(6,2)=N = OVEN(6,2)=N
+    ✓ NIGHT(6,3)=I = WADI(6,3)=I
+    ALL VERIFIED! ✓
+*/
+
+// Word definitions — each has direction, start cell, clue for HUD
+const WORDS = [
+  { id:'spark', word:'SPARK', dir:'H', row:0, col:1, clue:'🔥 Ignite the arcade!' },
+  { id:'glows', word:'GLOWS', dir:'H', row:3, col:0, clue:'✨ Emits soft light' },
+  { id:'night', word:'NIGHT', dir:'H', row:6, col:2, clue:'🌙 Hours of darkness' },
+  { id:'soul',  word:'SOUL',  dir:'V', row:0, col:1, clue:'💫 Heart of music' },
+  { id:'oven',  word:'OVEN',  dir:'V', row:3, col:2, clue:'🍕 Baking chamber' },
+  { id:'wadi',  word:'WADI',  dir:'V', row:3, col:3, clue:'🏜️ Desert dry stream' },
+];
+
+const ROWS = 7, COLS = 7;  // grid dimensions
+
+/* ============================================================
+   STATE
+   ============================================================ */
+const STATE = {
+  activeWord: null,    // word id currently selected
+  cursor: 0,           // position within active word
+  score: 0,
+  solved: new Set(),   // solved word ids
+  grid: [],            // 2D array of cell objects
+  cellEls: {},         // key: 'r,c' → DOM element
+  wrongCells: new Set(), // cells showing wrong letter
+};
+
+/* ============================================================
+   AUDIO ENGINE (Web Audio API)
+   No external files needed for SFX.
+   Stage 2: hook bgMusic element for background track.
+   ============================================================ */
+let audioCtx = null;
+
+// Lazy-init AudioContext on first interaction (browser policy)
+function getAudio() {
+  if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  return audioCtx;
+}
+
+const sfx = {
+  // Short beep: correct letter
+  correct() {
+    try {
+      const ac = getAudio();
+      const o = ac.createOscillator(), g = ac.createGain();
+      o.connect(g); g.connect(ac.destination);
+      o.type = 'sine'; o.frequency.setValueAtTime(880, ac.currentTime);
+      o.frequency.exponentialRampToValueAtTime(1320, ac.currentTime + 0.12);
+      g.gain.setValueAtTime(0.3, ac.currentTime);
+      g.gain.exponentialRampToValueAtTime(0.001, ac.currentTime + 0.25);
+      o.start(); o.stop(ac.currentTime + 0.25);
+    } catch(e) {}
+  },
+
+  // Low buzz: wrong letter
+  wrong() {
+    try {
+      const ac = getAudio();
+      const o = ac.createOscillator(), g = ac.createGain();
+      o.connect(g); g.connect(ac.destination);
+      o.type = 'sawtooth'; o.frequency.setValueAtTime(120, ac.currentTime);
+      o.frequency.exponentialRampToValueAtTime(80, ac.currentTime + 0.15);
+      g.gain.setValueAtTime(0.25, ac.currentTime);
+      g.gain.exponentialRampToValueAtTime(0.001, ac.currentTime + 0.2);
+      o.start(); o.stop(ac.currentTime + 0.2);
+    } catch(e) {}
+  },
+
+  // Fanfare: word solved
+  wordSolved() {
+    try {
+      const ac = getAudio();
+      [523.25, 659.25, 783.99, 1046.5].forEach((freq, i) => {
+        const o = ac.createOscillator(), g = ac.createGain();
+        o.connect(g); g.connect(ac.destination);
+        o.type = 'triangle'; o.frequency.value = freq;
+        const t = ac.currentTime + i * 0.1;
+        g.gain.setValueAtTime(0.3, t);
+        g.gain.exponentialRampToValueAtTime(0.001, t + 0.4);
+        o.start(t); o.stop(t + 0.4);
+      });
+    } catch(e) {}
+  },
+
+  // Big victory jingle
+  victory() {
+    try {
+      const ac = getAudio();
+      const melody = [523, 659, 784, 1047, 784, 1047, 1319];
+      melody.forEach((freq, i) => {
+        const o = ac.createOscillator(), g = ac.createGain();
+        o.connect(g); g.connect(ac.destination);
+        o.type = 'square'; o.frequency.value = freq;
+        const t = ac.currentTime + i * 0.18;
+        g.gain.setValueAtTime(0.18, t);
+        g.gain.exponentialRampToValueAtTime(0.001, t + 0.35);
+        o.start(t); o.stop(t + 0.35);
+      });
+    } catch(e) {}
+  },
+
+  // Key tap
+  tap() {
+    try {
+      const ac = getAudio();
+      const o = ac.createOscillator(), g = ac.createGain();
+      o.connect(g); g.connect(ac.destination);
+      o.type = 'sine'; o.frequency.value = 440;
+      g.gain.setValueAtTime(0.08, ac.currentTime);
+      g.gain.exponentialRampToValueAtTime(0.001, ac.currentTime + 0.07);
+      o.start(); o.stop(ac.currentTime + 0.07);
+    } catch(e) {}
+  }
+};
+
+/* ============================================================
+   SPARKLE PARTICLE BURST
+   Creates N colored circles that fly from cell center
+   ============================================================ */
+function sparkle(el) {
+  const rect = el.getBoundingClientRect();
+  const cx = rect.left + rect.width / 2;
+  const cy = rect.top + rect.height / 2;
+  const colors = ['#ffd700','#00f5ff','#ff2d78','#39ff14','#bf5fff','#ff6b00'];
+  const count = 14;
+
+  for (let i = 0; i < count; i++) {
+    const dot = document.createElement('div');
+    dot.className = 'sparkle';
+    const angle = (i / count) * Math.PI * 2;
+    const dist = 40 + Math.random() * 50;
+    const size = 5 + Math.random() * 7;
+    const dur = 0.5 + Math.random() * 0.4;
+    dot.style.cssText = `
+      left:${cx - size/2}px; top:${cy - size/2}px;
+      width:${size}px; height:${size}px;
+      background:${colors[i % colors.length]};
+      box-shadow:0 0 6px ${colors[i % colors.length]};
+      --spk-dx:${Math.cos(angle)*dist}px;
+      --spk-dy:${Math.sin(angle)*dist}px;
+      --spk-dur:${dur}s;
+    `;
+    document.body.appendChild(dot);
+    setTimeout(() => dot.remove(), dur * 1000 + 100);
+  }
+}
+
+/* ============================================================
+   STARFIELD GENERATOR
+   Creates random star elements for ambient atmosphere
+   ============================================================ */
+function buildStars() {
+  const container = document.getElementById('stars');
+  for (let i = 0; i < 80; i++) {
+    const s = document.createElement('span');
+    const size = 1 + Math.random() * 2.5;
+    s.style.cssText = `
+      left:${Math.random()*100}%;
+      top:${Math.random()*100}%;
+      width:${size}px; height:${size}px;
+      --dur:${2 + Math.random()*4}s;
+      animation-delay:${Math.random()*5}s;
+    `;
+    container.appendChild(s);
+  }
+}
+
+/* ============================================================
+   GRID INITIALIZATION
+   Builds 2D state array from WORDS definition
+   ============================================================ */
+function initGrid() {
+  // Create empty grid
+  STATE.grid = Array.from({length: ROWS}, () =>
+    Array.from({length: COLS}, () => null)
+  );
+
+  // Place each word's cells into grid
+  WORDS.forEach(w => {
+    for (let i = 0; i < w.word.length; i++) {
+      const r = w.dir === 'H' ? w.row : w.row + i;
+      const c = w.dir === 'H' ? w.col + i : w.col;
+      const existing = STATE.grid[r][c];
+      STATE.grid[r][c] = {
+        letter: w.word[i], // correct letter
+        shown: '',          // what player has entered
+        wordIds: existing ? [...existing.wordIds, w.id] : [w.id], // may belong to 2 words
+        r, c,
+      };
+    }
+  });
+}
+
+/* ============================================================
+   RENDER GRID
+   Builds CSS grid DOM from STATE.grid
+   ============================================================ */
+function renderGrid() {
+  const el = document.getElementById('grid');
+  el.style.gridTemplateColumns = `repeat(${COLS}, var(--cell-size))`;
+  el.style.gridTemplateRows    = `repeat(${ROWS}, var(--cell-size))`;
+  el.innerHTML = '';
+  STATE.cellEls = {};
+
+  // Cell number labels (1-across/down style)
+  const numbered = {};
+  let num = 1;
+  WORDS.forEach(w => {
+    const key = `${w.row},${w.col}`;
+    if (!numbered[key]) { numbered[key] = num++; }
+  });
+
+  for (let r = 0; r < ROWS; r++) {
+    for (let c = 0; c < COLS; c++) {
+      const cell = STATE.grid[r][c];
+      const div = document.createElement('div');
+
+      if (!cell) {
+        div.className = 'cell empty';
+      } else {
+        div.className = 'cell';
+        const nk = `${r},${c}`;
+        if (numbered[nk]) {
+          const num = document.createElement('span');
+          num.className = 'cell-num';
+          num.textContent = numbered[nk];
+          div.appendChild(num);
+        }
+        // Letter display node
+        const ltSpan = document.createElement('span');
+        ltSpan.className = 'cell-letter';
+        div.appendChild(ltSpan);
+
+        // Tap on cell → select the word it belongs to
+        div.addEventListener('click', () => onCellTap(r, c));
+        STATE.cellEls[nk] = div;
+      }
+
+      el.appendChild(div);
+    }
+  }
+}
+
+/* ============================================================
+   RENDER WORD BUTTONS (clue bar)
+   ============================================================ */
+function renderWordBtns() {
+  const bar = document.getElementById('clueBar');
+  // Remove old buttons (keep clue text div)
+  bar.querySelectorAll('.word-btn').forEach(b => b.remove());
+
+  WORDS.forEach(w => {
+    const btn = document.createElement('button');
+    btn.className = 'word-btn' + (STATE.solved.has(w.id) ? ' solved' : '');
+    btn.dataset.wid = w.id;
+    btn.textContent = `${w.dir} ${w.word.length}: ${w.word[0]}___`;
+    btn.addEventListener('click', () => selectWord(w.id));
+    bar.insertBefore(btn, document.getElementById('clueText'));
+  });
+}
+
+/* ============================================================
+   SELECT WORD
+   Sets active word, places cursor at first unsolved position
+   ============================================================ */
+function selectWord(wid) {
+  if (STATE.solved.has(wid)) return; // can't re-solve
+  sfx.tap();
+  STATE.activeWord = wid;
+
+  // Find first empty cell in word
+  const w = WORDS.find(x => x.id === wid);
+  STATE.cursor = 0;
+  for (let i = 0; i < w.word.length; i++) {
+    const r = w.dir === 'H' ? w.row : w.row + i;
+    const c = w.dir === 'H' ? w.col + i : w.col;
+    if (!STATE.grid[r][c].shown) { STATE.cursor = i; break; }
+  }
+
+  updateHighlights();
+  updateClueTxt();
+  updateWordBtnStyles();
+}
+
+/* ============================================================
+   ON CELL TAP
+   If cell belongs to one word → auto-select it
+   If it belongs to two → toggle between them
+   ============================================================ */
+function onCellTap(r, c) {
+  const cell = STATE.grid[r][c];
+  if (!cell) return;
+  const unsolved = cell.wordIds.filter(id => !STATE.solved.has(id));
+  if (!unsolved.length) return;
+
+  // If already active word contains this cell, advance cursor
+  if (STATE.activeWord && unsolved.includes(STATE.activeWord)) {
+    const w = WORDS.find(x => x.id === STATE.activeWord);
+    const pos = w.dir === 'H' ? c - w.col : r - w.row;
+    STATE.cursor = pos;
+    updateHighlights();
+    return;
+  }
+
+  // Pick first unsolved word containing this cell
+  selectWord(unsolved[0]);
+}
+
+/* ============================================================
+   UPDATE VISUAL HIGHLIGHTS
+   ============================================================ */
+function updateHighlights() {
+  const w = WORDS.find(x => x.id === STATE.activeWord);
+
+  // Reset all cells
+  Object.values(STATE.cellEls).forEach(el => {
+    el.classList.remove('active-word', 'active-cursor');
+  });
+
+  if (!w) return;
+
+  // Highlight word cells
+  for (let i = 0; i < w.word.length; i++) {
+    const r = w.dir === 'H' ? w.row : w.row + i;
+    const c = w.dir === 'H' ? w.col + i : w.col;
+    const el = STATE.cellEls[`${r},${c}`];
+    if (el) {
+      el.classList.add(i === STATE.cursor ? 'active-cursor' : 'active-word');
+    }
+  }
+}
+
+/* ============================================================
+   UPDATE CLUE TEXT
+   ============================================================ */
+function updateClueTxt() {
+  const w = WORDS.find(x => x.id === STATE.activeWord);
+  document.getElementById('clueText').textContent = w ? w.clue : 'Select a word to begin';
+}
+
+/* ============================================================
+   UPDATE WORD BUTTON STYLES
+   ============================================================ */
+function updateWordBtnStyles() {
+  document.querySelectorAll('.word-btn').forEach(btn => {
+    const wid = btn.dataset.wid;
+    btn.className = 'word-btn' +
+      (STATE.solved.has(wid) ? ' solved' : '') +
+      (wid === STATE.activeWord ? ' active' : '');
+  });
+}
+
+/* ============================================================
+   RENDER CELL DISPLAY
+   Updates the letter shown in a cell and its style classes
+   ============================================================ */
+function renderCell(r, c) {
+  const el = STATE.cellEls[`${r},${c}`];
+  const cell = STATE.grid[r][c];
+  if (!el || !cell) return;
+
+  const ltSpan = el.querySelector('.cell-letter');
+  if (ltSpan) ltSpan.textContent = cell.shown || '';
+
+  // Style: solved vs wrong vs normal
+  el.classList.toggle('solved-cell', cell.shown === cell.letter && !el.classList.contains('glow-correct'));
+  el.classList.toggle('wrong-letter', !!(cell.shown && cell.shown !== cell.letter));
+}
+
+/* ============================================================
+   CORE INPUT HANDLER
+   Called by keyboard buttons
+   letter = 'A'-'Z' or '⌫' for backspace
+   ============================================================ */
+function onKey(letter) {
+  if (!STATE.activeWord) return;
+  const w = WORDS.find(x => x.id === STATE.activeWord);
+  if (!w) return;
+
+  if (letter === '⌫') {
+    // Backspace: clear current or previous cell
+    handleBackspace(w);
+    return;
+  }
+
+  // Get current cursor cell
+  const r = w.dir === 'H' ? w.row : w.row + STATE.cursor;
+  const c = w.dir === 'H' ? w.col + STATE.cursor : w.col;
+  const cell = STATE.grid[r][c];
+  if (!cell) return;
+
+  // Skip already-correctly-placed cells (from intersecting solved word)
+  if (cell.shown === cell.letter) {
+    advanceCursor(w);
+    return;
+  }
+
+  // Place letter
+  cell.shown = letter;
+
+  const el = STATE.cellEls[`${r},${c}`];
+  el.classList.remove('glow-correct', 'glow-wrong', 'wrong-letter', 'solved-cell');
+
+  if (letter === cell.letter) {
+    // CORRECT
+    sfx.correct();
+    void el.offsetWidth; // force reflow for animation restart
+    el.classList.add('glow-correct');
+    sparkle(el);
+    STATE.score += 10;
+    document.getElementById('scoreDisp').textContent = STATE.score;
+
+    renderCell(r, c);
+
+    // Check if word is now complete
+    setTimeout(() => {
+      el.classList.remove('glow-correct');
+      el.classList.add('solved-cell');
+      if (checkWordSolved(w)) {
+        STATE.solved.add(w.id);
+        sfx.wordSolved();
+        updateWordBtnStyles();
+        // Big sparkle burst on whole word
+        for (let i = 0; i < w.word.length; i++) {
+          const wr = w.dir === 'H' ? w.row : w.row + i;
+          const wc = w.dir === 'H' ? w.col + i : w.col;
+          const we = STATE.cellEls[`${wr},${wc}`];
+          if (we) setTimeout(() => sparkle(we), i * 80);
+        }
+        // Check victory
+        setTimeout(() => {
+          if (STATE.solved.size === WORDS.length) showVictory();
+          else { STATE.activeWord = null; updateHighlights(); updateClueTxt(); updateWordBtnStyles(); }
+        }, 500);
+        return;
+      }
+      advanceCursor(w);
+    }, 350);
+
+  } else {
+    // WRONG — show red flash, don't lock
+    sfx.wrong();
+    void el.offsetWidth;
+    el.classList.add('glow-wrong', 'wrong-letter');
+    const ltSpan = el.querySelector('.cell-letter');
+    if (ltSpan) ltSpan.textContent = letter;
+    // Stage 2: sprite reacts with 'wrong' animation here
+  }
+}
+
+/* ============================================================
+   ADVANCE CURSOR
+   Moves cursor forward, skipping already-solved cells
+   ============================================================ */
+function advanceCursor(w) {
+  let next = STATE.cursor + 1;
+  while (next < w.word.length) {
+    const r = w.dir === 'H' ? w.row : w.row + next;
+    const c = w.dir === 'H' ? w.col + next : w.col;
+    if (STATE.grid[r][c].shown !== STATE.grid[r][c].letter) break;
+    next++;
+  }
+  if (next < w.word.length) {
+    STATE.cursor = next;
+    updateHighlights();
+  }
+}
+
+/* ============================================================
+   HANDLE BACKSPACE
+   Clears current cell if filled, else previous cell
+   ============================================================ */
+function handleBackspace(w) {
+  sfx.tap();
+  const r = w.dir === 'H' ? w.row : w.row + STATE.cursor;
+  const c = w.dir === 'H' ? w.col + STATE.cursor : w.col;
+  const cell = STATE.grid[r][c];
+
+  if (cell && cell.shown && cell.shown !== cell.letter) {
+    // Clear wrong letter at cursor
+    cell.shown = '';
+    const el = STATE.cellEls[`${r},${c}`];
+    el.classList.remove('wrong-letter', 'glow-wrong');
+    const ltSpan = el.querySelector('.cell-letter');
+    if (ltSpan) ltSpan.textContent = '';
+  } else {
+    // Move back one and clear
+    if (STATE.cursor > 0) {
+      STATE.cursor--;
+      const pr = w.dir === 'H' ? w.row : w.row + STATE.cursor;
+      const pc = w.dir === 'H' ? w.col + STATE.cursor : w.col;
+      const pcell = STATE.grid[pr][pc];
+      if (pcell && pcell.shown !== pcell.letter) {
+        pcell.shown = '';
+        const pel = STATE.cellEls[`${pr},${pc}`];
+        pel.classList.remove('wrong-letter', 'glow-wrong', 'solved-cell');
+        const ltSpan = pel.querySelector('.cell-letter');
+        if (ltSpan) ltSpan.textContent = '';
+      }
+    }
+  }
+  updateHighlights();
+}
+
+/* ============================================================
+   CHECK IF WORD IS SOLVED
+   ============================================================ */
+function checkWordSolved(w) {
+  for (let i = 0; i < w.word.length; i++) {
+    const r = w.dir === 'H' ? w.row : w.row + i;
+    const c = w.dir === 'H' ? w.col + i : w.col;
+    if (STATE.grid[r][c].shown !== w.word[i]) return false;
+  }
+  return true;
+}
+
+/* ============================================================
+   BUILD ALPHABET KEYBOARD
+   QWERTY layout, no phone keyboard involvement
+   ============================================================ */
+function buildKeyboard() {
+  const rows = ['QWERTYUIOP', 'ASDFGHJKL', 'ZXCVBNM'];
+  const kb = document.getElementById('keyboard');
+  kb.innerHTML = '';
+
+  rows.forEach((row, ri) => {
+    const rowEl = document.createElement('div');
+    rowEl.className = 'key-row';
+
+    if (ri === 2) {
+      // Add backspace at end of bottom row
+      [...row].forEach(ch => {
+        const btn = document.createElement('button');
+        btn.className = 'key';
+        btn.textContent = ch;
+        btn.addEventListener('click', () => onKey(ch));
+        rowEl.appendChild(btn);
+      });
+      const back = document.createElement('button');
+      back.className = 'key-back';
+      back.textContent = '⌫';
+      back.addEventListener('click', () => onKey('⌫'));
+      rowEl.appendChild(back);
+    } else {
+      [...row].forEach(ch => {
+        const btn = document.createElement('button');
+        btn.className = 'key';
+        btn.textContent = ch;
+        btn.addEventListener('click', () => onKey(ch));
+        rowEl.appendChild(btn);
+      });
+    }
+
+    kb.appendChild(rowEl);
+  });
+}
+
+/* ============================================================
+   SHOW VICTORY SCREEN
+   ============================================================ */
+function showVictory() {
+  sfx.victory();
+  document.getElementById('finalScore').textContent = STATE.score;
+  document.getElementById('victory').classList.add('show');
+
+  // Mega sparkle burst
+  const allCells = Object.values(STATE.cellEls);
+  allCells.forEach((el, i) => {
+    if (!el.classList.contains('empty')) {
+      setTimeout(() => sparkle(el), Math.random() * 1200);
+    }
+  });
+}
+
+/* ============================================================
+   START GAME (from intro screen)
+   ============================================================ */
+function startGame() {
+  sfx.tap();
+  document.getElementById('intro').classList.add('hidden');
+  // Stage 2: bgMusic.play() here when audio file is added
+}
+
+/* ============================================================
+   RESET GAME
+   ============================================================ */
+function resetGame() {
+  STATE.score = 0;
+  STATE.solved = new Set();
+  STATE.activeWord = null;
+  STATE.cursor = 0;
+  document.getElementById('scoreDisp').textContent = '0';
+  document.getElementById('victory').classList.remove('show');
+
+  initGrid();
+  renderGrid();
+  renderWordBtns();
+  updateClueTxt();
+}
+
+/* ============================================================
+   INIT — runs on page load
+   ============================================================ */
+(function init() {
+  buildStars();
+  initGrid();
+  renderGrid();
+  renderWordBtns();
+  updateClueTxt();
+  buildKeyboard();
+})();
+</script>
+
+</body>
+</html>
